@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useMeta } from '@/hooks/useData'
 import { CommandSearch } from './CommandSearch'
+import { DemoBanner } from './DemoBanner'
 import { Brand, NavList, Sidebar } from './Sidebar'
 import { StorageIssuesBanner } from './StorageIssuesBanner'
 import { TopBar } from './TopBar'
@@ -48,6 +49,7 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onMenu={() => setMobileOpen(true)} />
         <StorageIssuesBanner />
+        <DemoBanner />
         <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 lg:px-8 lg:py-8">
           <Outlet />
         </main>
