@@ -3,10 +3,12 @@ import {
   CheckIcon,
   ListTodoIcon,
   MenuIcon,
+  MoonIcon,
   PlusIcon,
   ReceiptIcon,
   SearchIcon,
   SettingsIcon,
+  SunIcon,
   TargetIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -27,10 +29,30 @@ import { useNoteEditor } from "@/features/knowledge/editor";
 import { useTaskEditor } from "@/features/tasks/editor";
 import { TimerIndicator } from "@/features/time-tracking/components/TimerIndicator";
 import { useDb } from "@/data/store";
+import { settingsService } from "@/features/settings/service";
 import { useToday } from "@/hooks/useData";
+import { useResolvedTheme } from "@/hooks/useTheme";
 import { formatDate, formatWeekRange, startOfWeekKey } from "@/services/date";
 import { pageTitleFor } from "../config/navigation";
 import { useSearchOpen } from "./CommandSearch";
+
+/** Quick light/dark switch; picking "system" stays available in Settings. */
+function ThemeToggle() {
+  const resolved = useResolvedTheme();
+  const isDark = resolved === "dark";
+  const label = isDark ? "Yorug‘ rejimga o‘tish" : "Qorong‘i rejimga o‘tish";
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => settingsService.setTheme(isDark ? "light" : "dark")}
+      aria-label={label}
+      title={label}
+    >
+      {isDark ? <SunIcon /> : <MoonIcon />}
+    </Button>
+  );
+}
 
 function SaveIndicator() {
   const persistent = useDb((s) => s.persistent);
@@ -131,6 +153,7 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ThemeToggle />
       <Button
         asChild
         variant="ghost"

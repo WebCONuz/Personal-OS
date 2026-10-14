@@ -1,11 +1,10 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// Theme is fixed to light for now; dark mode will be wired through the profile setting later.
+// The resolved theme is passed in from App (profile setting), so no theme default here.
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      theme="light"
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

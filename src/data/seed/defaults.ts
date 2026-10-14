@@ -28,7 +28,7 @@ export function createDefaultState(now: string = nowIso()): DbState {
       weekStartsOn: 1,
       locale: 'uz-UZ',
       defaultCurrency: 'UZS',
-      theme: 'light',
+      theme: 'system',
       gamificationEnabled: true,
       weeklyCapacityMinutes: 600,
       bufferPercent: 20,

@@ -7,6 +7,16 @@
     <meta name="description" content="Personal OS — shaxsiy rivojlanish platformasi: maqsadlar, haftalik reja, moliya va odatlar." />
     <meta name="theme-color" content="#fbfbfc" />
     <title>Personal OS</title>
+    <script>
+      // Applies the saved theme before first paint so dark mode never flashes light.
+      // Keep in sync with src/hooks/useTheme.ts (a missing profile means the "system" default).
+      try {
+        var theme = JSON.parse(localStorage.getItem('personal-os:profile') || '{}').theme
+        if (theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark')
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -2,9 +2,13 @@ import {
   DatabaseIcon,
   DownloadIcon,
   FileWarningIcon,
+  MonitorIcon,
+  MoonIcon,
   ShieldAlertIcon,
+  SunIcon,
   Trash2Icon,
   UploadIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { confirm } from "@/components/shared/confirm";
@@ -26,7 +30,9 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
-import { COLLECTION_LABELS } from "@/constants/labels";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { COLLECTION_LABELS, THEME_LABELS } from "@/constants/labels";
+import { THEMES } from "@/data/schema/entities";
 import { countDemoRecords } from "@/data/seed/demo";
 import { useDbState, useLifeAreas, useMeta, useProfile } from "@/hooks/useData";
 import { cn } from "@/lib/utils";
@@ -37,7 +43,14 @@ import {
 } from "@/services/backup";
 import { formatDateTime } from "@/services/date";
 import { CURRENCIES, type Currency } from "@/services/money";
+import type { Theme } from "@/types";
 import { settingsService } from "../service";
+
+const THEME_ICONS: Record<Theme, LucideIcon> = {
+  light: SunIcon,
+  dark: MoonIcon,
+  system: MonitorIcon,
+};
 
 function ProfileCard() {
   const profile = useProfile();
@@ -131,10 +144,37 @@ function ProfileCard() {
               Hafta boshlanishi va til
             </span>
             <p className="text-sm text-muted-foreground">
-              Dushanba · O‘zbek (lotin). Qorong‘i rejim va boshqa tillar keyingi
-              bosqichda.
+              Dushanba · O‘zbek (lotin). Boshqa tillar keyingi bosqichda.
             </p>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border px-4 py-3">
+          <div>
+            <p id="set-theme-label" className="text-sm font-medium">
+              Mavzu
+            </p>
+            <p className="text-xs text-muted-foreground">
+              “Tizim” qurilmangiz sozlamasiga avtomatik moslashadi.
+            </p>
+          </div>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            spacing={0}
+            value={profile.theme}
+            onValueChange={(v) => v && settingsService.setTheme(v as Theme)}
+            aria-labelledby="set-theme-label"
+          >
+            {THEMES.map((t) => {
+              const Icon = THEME_ICONS[t];
+              return (
+                <ToggleGroupItem key={t} value={t}>
+                  <Icon aria-hidden="true" /> {THEME_LABELS[t]}
+                </ToggleGroupItem>
+              );
+            })}
+          </ToggleGroup>
         </div>
         <div className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3">
           <div>

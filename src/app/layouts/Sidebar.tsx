@@ -82,7 +82,8 @@ function NavItemLink({
           rowClass,
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+            : // Dark accent is Telegram's "selected" blue; hover uses a neutral tint like Telegram.
+              "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground dark:hover:bg-sidebar-foreground/5",
         )}
       >
         <RowContent icon={item.icon} label={item.label} collapsed={collapsed} />

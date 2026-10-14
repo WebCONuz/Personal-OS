@@ -8,7 +8,7 @@ import { estimateUsageBytes, listRecoveryKeys } from '@/data/storage/persistence
 import { getDb, getStorageAdapter, useDb } from '@/data/store'
 import { applyImport, backupFileName, createBackup, downloadBlob, downloadJson, parseBackup, type ImportPreview, type ImportStrategy } from '@/services/backup'
 import { todayKey } from '@/services/date'
-import type { Profile } from '@/types'
+import type { Profile, Theme } from '@/types'
 
 function storageErrorToast(title: string, error: unknown) {
   const e = error instanceof StorageError ? error : toStorageError(error)
@@ -18,6 +18,11 @@ function storageErrorToast(title: string, error: unknown) {
 export const settingsService = {
   updateProfile(patch: Partial<Omit<Profile, 'id' | 'createdAt' | 'updatedAt'>>, success = 'Sozlamalar saqlandi') {
     return mutate((s) => ({ profile: { ...s.profile, ...patch, updatedAt: nowIso() } }), { success })
+  },
+
+  /** No toast: the theme change itself is the feedback. */
+  setTheme(theme: Theme) {
+    return mutate((s) => ({ profile: { ...s.profile, theme, updatedAt: nowIso() } }))
   },
 
   setLifeAreaActive(id: string, isActive: boolean) {

@@ -18,6 +18,7 @@ import type {
   SAVINGS_STATUSES,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  THEMES,
   TRANSACTION_TYPES,
   WEEKLY_PLAN_STATUSES,
 } from '@/data/schema/entities'
@@ -33,6 +34,12 @@ export const GOAL_STATUS_LABELS: Labels<typeof GOAL_STATUSES> = {
 }
 
 export const PROJECT_STATUS_LABELS = GOAL_STATUS_LABELS
+
+export const THEME_LABELS: Labels<typeof THEMES> = {
+  light: 'Yorug‘',
+  dark: 'Qorong‘i',
+  system: 'Tizim',
+}
 
 export const GOAL_METRIC_LABELS: Labels<typeof GOAL_METRICS> = {
   completion: 'Bajarildi / bajarilmadi',
