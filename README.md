@@ -68,9 +68,9 @@ ma’lumotlarini saqlaydi.
 
 | Bo‘lim | Yo‘l | Imkoniyatlar |
 |---|---|---|
-| Onboarding | `/welcome` | Bo‘sh ish maydoni yoki demo ma’lumotlar; ism |
+| Onboarding | `/welcome` | Bo‘sh ish maydoni yoki demo ma’lumotlar; ism. Demo tanlansa, har sahifa tepasida banner chiqadi va bir tugma bilan demo yozuvlarni tozalab, o‘z ma’lumotlari bilan davom etish mumkin |
 | Dashboard | `/` | Salomlashuv, bugungi 3 ta vazifa, haftalik progress va ustuvorliklar, faol maqsadlar, XP/daraja/streak, vaqt taqsimoti, oylik moliya (valyuta bo‘yicha), odatlar va challenge, insight’lar, review CTA, “Boshlash” checklist |
-| Maqsadlar | `/goals`, `/goals/:goalId` | CRUD, 4 xil o‘lchov (bajarildi, foiz, sonli, bosqichlar), ota/bola maqsad, bosqichlar, progress tarixi + grafik, bog‘langan vazifa/loyihalar, filtr (holat/soha/muddat), karta va ro‘yxat ko‘rinishi |
+| Maqsadlar | `/goals`, `/goals/:goalId` | CRUD, 4 xil o‘lchov (bajarildi, foiz, sonli, bosqichlar), ota/bola maqsad, bosqichlar (qo‘shish, joyida tahrirlash, bajarish, o‘chirish), progress tarixi + grafik, bog‘langan vazifa/loyihalar, filtr (holat/soha/muddat), karta va ro‘yxat ko‘rinishi |
 | Rejalashtirish | `/planning/*` | Haftalik reja (qoralama → faol → yakunlangan; 3–5 ustuvor natija, sig‘im va buffer, ortiqcha reja ogohlantirishi, kunlarga taqsimlash, challenge), “Bugun” sahifasi va kun yakuni, vazifalar (Inbox, rejalashtirilmagan, bugun, muddati o‘tgan, qidiruv, filtr, saralash), vaqt kuzatuvi (taymer + qo‘lda), haftalik review |
 | Karyera | `/career/*` | Ko‘nikmalar matritsasi, o‘rganish yo‘nalishlari (daraja farqi, reja, resurslar, vaqt, dalillar), yutuqlar timeline’i, ish arizalari pipeline’i, intervyu qaydlari |
 | Biznes va loyihalar | `/business/*` | Umumiy loyiha modeli (biznes/portfolio/ilmiy/shaxsiy), progress vazifalardan, “keyingi eng kichik qadam”, g‘oyalar kanbani va baholash, g‘oyani loyihaga aylantirish, mijozlar, parallel loyihalar ogohlantirishi |
@@ -78,8 +78,23 @@ ma’lumotlarini saqlaydi.
 | Moliya | `/finance/*` | Daromad/xarajat CRUD, UZS/USD alohida, oylik va 6 oylik grafiklar, kategoriyalar, budjet limitlari, jamg‘arma maqsadlari (hissa yozuvlari yagona manba), CSV eksport |
 | Hayot tarzi | `/lifestyle/*` | Odatlar (kunlik/haftalik target, haftalik jadval, streak qoidasi), salomatlik ko‘rsatkichlari, oila: har yili takrorlanadigan muhim sanalar, rejalar, vazifalar |
 | Statistika | `/analytics` | 8 haftalik trendlar, sohalar bo‘yicha vaqt, odatlar, maqsadlar, oylik moliya jadvali, streak tarixi (30 kun, eng uzun streak), XP tarixi, nishonlar, qoidaga asoslangan insight’lar |
-| Sozlamalar | `/settings` | Profil, haftalik sig‘im, gamifikatsiyani o‘chirish, hayot sohalarini yashirish/nomlash, JSON eksport, preview’li import (birlashtirish/almashtirish), demo yuklash/tozalash, zaxira nusxalar, reset, maxfiylik eslatmasi |
-| Global | — | Ctrl/⌘+K qidiruv (natija o‘z sahifasida tahrirlash oynasi bilan ochiladi), tezkor qo‘shish menyusi (vazifa, maqsad, qayd, xarajat), ishlayotgan taymer indikatori, saqlash holati, xotira muammolari banneri |
+| Sozlamalar | `/settings` | Profil, mavzu (yorug‘ / qorong‘i / tizim), haftalik sig‘im, gamifikatsiyani o‘chirish, hayot sohalarini yashirish/nomlash, JSON eksport, preview’li import (birlashtirish/almashtirish), demo yuklash/tozalash, zaxira nusxalar, reset, maxfiylik eslatmasi |
+| Global | — | Ctrl/⌘+K qidiruv (natija o‘z sahifasida tahrirlash oynasi bilan ochiladi), tezkor qo‘shish menyusi (vazifa, maqsad, qayd, xarajat), TopBar’da yorug‘/qorong‘i rejim tugmasi, yig‘iladigan sidebar (holati qurilmada eslab qolinadi), ishlayotgan taymer indikatori, saqlash holati, xotira muammolari va demo banneri |
+
+### Qorong‘i rejim
+
+Ranglar Telegram Desktop’ning “Night” palitrasiga asoslangan (fon `#0e1621`, panellar `#17212b`, aktiv element
+`#2b5278`, aksent `#5288c1`). Istisno: `--primary` biroz to‘qroq `#4378b3`, chunki oq matn `#5288c1` ustida
+WCAG AA kontrastiga (4.5:1) yetmaydi.
+
+- Tanlov `profile.theme`da saqlanadi (`light` / `dark` / `system`), shuning uchun JSON zaxira bilan birga ko‘chadi.
+  Yangi profillar uchun standart qiymat — `system`.
+- `src/hooks/useTheme.ts`: `useResolvedTheme()` haqiqiy mavzuni qaytaradi (`system` OS sozlamasini jonli kuzatadi),
+  `useThemeSync()` (App’da bir marta) `<html>`ga `.dark` klassini va `theme-color` meta’ni qo‘yadi.
+- `index.html`dagi kichik inline skript mavzuni birinchi chizishdan oldin qo‘llaydi — qorong‘i mavzu oq bo‘lib
+  miltillamaydi. `useTheme.ts`ni o‘zgartirsangiz, uni ham moslang.
+- Komponentlarda qattiq ranglar ishlatilmaydi — faqat `src/index.css`dagi tokenlar (`bg-card`,
+  `text-muted-foreground`, …); yangi rang kerak bo‘lsa, `:root` va `.dark`ga birga qo‘shing.
 
 ## Arxitektura
 
@@ -88,12 +103,12 @@ Loyiha **feature-based** tuzilgan: har bir domen o‘z papkasida, umumiy narsala
 ```text
 src/
   main.tsx              # kirish nuqtasi
-  index.css             # Tailwind + dizayn tokenlari (light va .dark)
+  index.css             # Tailwind + dizayn tokenlari (light va Telegram uslubidagi .dark)
   app/
-    App.tsx             # provider’lar + RouterProvider
+    App.tsx             # provider’lar + RouterProvider + mavzu sinxronlash
     router/             # marshrutlar (lazy sahifalar), RouteError, 404
     layouts/            # AppLayout, Sidebar, TopBar, SectionLayout (tab’li bo‘limlar),
-                        # CommandSearch (Ctrl/⌘+K), EditorHosts, StorageIssuesBanner
+                        # CommandSearch (Ctrl/⌘+K), EditorHosts, StorageIssuesBanner, DemoBanner
     config/             # navigatsiya va sahifa sarlavhalari
   components/
     ui/                 # shadcn/ui komponentlari (generatsiya qilingan)
@@ -118,7 +133,7 @@ src/
     mutate.ts           # sof “recipe” → atomik commit + toast
     store.ts            # Zustand store: avval saqlaydi, keyin UI holatini yangilaydi
   constants/labels.ts   # enum label’lari (kelajakdagi i18n uchun bitta joy)
-  hooks/                # umumiy hook’lar (useCollection, useToday, …)
+  hooks/                # umumiy hook’lar (useCollection, useToday, useTheme, …)
   lib/                  # cn, id, notify, createEditorStore, uiPrefs
   types/                # Zod’dan chiqarilgan TypeScript turlari
   test/                 # test setup, render helperi, factory’lar
@@ -251,13 +266,15 @@ va kerak bo‘lsa `npm uninstall cn` qiling.
 
 ## Testlar va sifat
 
-`npm run test` — 14 ta fayl, 84 ta test. Muhit: jsdom, setup — `src/test/setup.ts`.
+`npm run test` — 17 ta fayl, 91 ta test. Muhit: jsdom, setup — `src/test/setup.ts`.
 
 - **Domen:** sana/hafta hisoblari, valyuta formati va ajratish, progress, daraja va XP qoidalari, streak’lar va
   streak tarixi, cascade/unlink, atomik yozish va rollback, buzilgan JSON, migratsiya bloki, demo ma’lumotlar
   validatsiyasi va tozalanishi, eksport/import, vazifa/odat/taymer/jamg‘arma/haftalik reja servislari.
-- **Komponentlar** (Testing Library + `axe-core`): Vazifalar, Maqsadlar (forma validatsiyasi), Haftalik reja
-  (holatlar, ortiqcha reja), Odatlar, Sozlamalar (import), global qidiruv.
+- **Komponentlar** (Testing Library + `axe-core`): Vazifalar, Maqsadlar (forma validatsiyasi, bosqichlarni
+  tahrirlash), Haftalik reja (holatlar, ortiqcha reja), Odatlar, Sozlamalar (import, mavzu tanlash), global
+  qidiruv, demo banneri.
+- **Mavzu:** `system` standart qiymati, `<html>`ga `.dark` klassini qo‘yish/olib tashlash.
 
 Test yordamchilari (`src/test/`):
 
@@ -279,8 +296,6 @@ Layout 360px, 375px, ~800px va 1440px kengliklarda tekshirilgan, gorizontal scro
 
 ### Rejadagi ishlar
 
-- **Qorong‘i rejim** — `.dark` tokenlari `src/index.css`da tayyor, `profile.theme` maydoni (`light`/`dark`/`system`)
-  bor; hali ulanmagan (Toaster ham `theme="light"`da qotirilgan).
 - **Ko‘p tillilik** — enum label’lari `src/constants/labels.ts`da markazlashgan, komponent matnlari hali ichida.
 - Takrorlanuvchi vazifalar.
 - Drag-and-drop (hozir kun/holat select orqali tanlanadi).

@@ -100,26 +100,18 @@ export function NavList({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col gap-1">
-      <ul className="flex flex-col gap-0.5">
-        {MAIN_NAV.map((item) => (
-          <li key={item.to}>
-            <NavItemLink
-              item={item}
-              collapsed={collapsed}
-              onNavigate={onNavigate}
-            />
-          </li>
-        ))}
-      </ul>
-      <div className="mt-auto border-t border-sidebar-border pt-2">
-        <NavItemLink
-          item={SETTINGS_NAV}
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
-      </div>
-    </div>
+    // Settings is a regular last item so it is found where the rest of the navigation is.
+    <ul className="flex flex-col gap-0.5">
+      {[...MAIN_NAV, SETTINGS_NAV].map((item) => (
+        <li key={item.to}>
+          <NavItemLink
+            item={item}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }
 
