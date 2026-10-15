@@ -2,6 +2,7 @@ import {
   BookOpenIcon,
   CheckIcon,
   ListTodoIcon,
+  Loader2Icon,
   MenuIcon,
   MoonIcon,
   PlusIcon,
@@ -57,6 +58,7 @@ function ThemeToggle() {
 function SaveIndicator() {
   const persistent = useDb((s) => s.persistent);
   const blocked = useDb((s) => s.writeBlocked);
+  const saving = useDb((s) => s.pendingWrites > 0);
   if (!persistent || blocked) {
     return (
       <Link
@@ -74,7 +76,16 @@ function SaveIndicator() {
       className="hidden items-center gap-1 text-xs text-muted-foreground xl:flex"
       title="Ma’lumotlar shu brauzerda saqlanadi"
     >
-      <CheckIcon className="size-3.5" aria-hidden="true" /> Lokal saqlangan
+      {saving ? (
+        <>
+          <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />{" "}
+          Saqlanmoqda…
+        </>
+      ) : (
+        <>
+          <CheckIcon className="size-3.5" aria-hidden="true" /> Lokal saqlangan
+        </>
+      )}
     </span>
   );
 }

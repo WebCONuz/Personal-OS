@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryAdapter } from '@/data/storage/adapter'
-import { getDb, reloadDb, useDb } from '@/data/store'
+import { flushWrites, getDb, reloadDb, useDb } from '@/data/store'
 import { goalService, milestoneService } from '@/features/goals/service'
 import { habitService } from '@/features/habits/service'
 import { savingsService } from '@/features/finance/service'
@@ -52,20 +52,41 @@ describe('task workflow', () => {
     expect(byId[b.id].weekStart).toBe('2026-10-05')
   })
 
-  it('persists to storage so data survives a reload', () => {
+  it('persists to storage so data survives a reload', async () => {
     const adapter = createMemoryAdapter()
     reloadDb(adapter)
     taskService.create({ title: 'Saqlanadi', description: '', status: 'todo', priority: 'medium' }, { silent: true })
+    await flushWrites()
     reloadDb(adapter)
     expect(getDb().tasks.map((t) => t.title)).toEqual(['Saqlanadi'])
   })
 
-  it('leaves state untouched when storage fails', () => {
-    const adapter = createMemoryAdapter()
-    reloadDb({ ...adapter, setItem: () => { throw new DOMException('full', 'QuotaExceededError') } })
-    const result = taskService.create({ title: 'x', description: '', status: 'todo', priority: 'low' }, { silent: true })
-    expect(result).toBeNull()
+  it('updates the UI at once and rolls back when the background save fails', async () => {
+    reloadDb({ ...createMemoryAdapter(), write: () => Promise.reject(new DOMException('full', 'QuotaExceededError')) })
+    taskService.create({ title: 'x', description: '', status: 'todo', priority: 'low' }, { silent: true })
+    expect(useDb.getState().data.tasks).toHaveLength(1)
+    expect(useDb.getState().pendingWrites).toBe(1)
+    await flushWrites()
     expect(useDb.getState().data.tasks).toEqual([])
+    expect(useDb.getState().pendingWrites).toBe(0)
+  })
+
+  it('drops changes queued after a failed save and keeps the last saved state', async () => {
+    const memory = createMemoryAdapter()
+    reloadDb(memory)
+    taskService.create({ title: 'saqlangan', description: '', status: 'todo', priority: 'low' }, { silent: true })
+    await flushWrites()
+
+    let calls = 0
+    reloadDb({ ...memory, write: (changes) => (++calls === 1 ? Promise.reject(new Error('disk')) : memory.write(changes)) })
+    taskService.create({ title: 'a', description: '', status: 'todo', priority: 'low' }, { silent: true })
+    taskService.create({ title: 'b', description: '', status: 'todo', priority: 'low' }, { silent: true })
+    await flushWrites()
+
+    expect(getDb().tasks.map((t) => t.title)).toEqual(['saqlangan'])
+    expect(calls).toBe(1)
+    reloadDb(memory)
+    expect(getDb().tasks.map((t) => t.title)).toEqual(['saqlangan'])
   })
 })
 

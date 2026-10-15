@@ -20,6 +20,11 @@ export function useMeta() {
   return useDb((s) => s.meta)
 }
 
+/** Whether the browser granted persistent storage; null while unknown or unsupported. */
+export function useDurableStorage() {
+  return useDb((s) => s.durable)
+}
+
 export function useLifeAreas(opts: { activeOnly?: boolean } = {}) {
   const areas = useDb((s) => s.data.lifeAreas)
   return useMemo(() => {

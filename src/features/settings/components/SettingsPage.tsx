@@ -34,7 +34,13 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { COLLECTION_LABELS, THEME_LABELS } from "@/constants/labels";
 import { THEMES } from "@/data/schema/entities";
 import { countDemoRecords } from "@/data/seed/demo";
-import { useDbState, useLifeAreas, useMeta, useProfile } from "@/hooks/useData";
+import {
+  useDbState,
+  useDurableStorage,
+  useLifeAreas,
+  useMeta,
+  useProfile,
+} from "@/hooks/useData";
 import { cn } from "@/lib/utils";
 import {
   ImportError,
@@ -428,7 +434,8 @@ function DataCard() {
     }
   };
 
-  const refresh = () => setInfo(settingsService.storageInfo());
+  const durable = useDurableStorage();
+  const refresh = () => void settingsService.refreshStorageInfo().then(setInfo);
 
   return (
     <SectionCard
@@ -529,8 +536,15 @@ function DataCard() {
           <p className="text-sm font-medium">Brauzer xotirasi</p>
           <p className="tabular text-xs text-muted-foreground">
             Taxminan {(info.usageBytes / 1024).toFixed(1)} KB ishlatilmoqda
-            (brauzer limiti odatda ~5 MB).
+            (IndexedDB).
           </p>
+          {durable !== null && (
+            <p className="text-xs text-muted-foreground">
+              {durable
+                ? "Doimiy saqlash yoqilgan: brauzer disk to‘lganda ham ma’lumotlarni o‘zi o‘chirmaydi."
+                : "Doimiy saqlashga brauzer ruxsat bermadi: disk juda to‘lsa, brauzer ma’lumotlarni o‘chirishi mumkin. Muntazam JSON eksport qiling."}
+            </p>
+          )}
           {info.recoveryKeys.length > 0 && (
             <>
               <p className="text-xs text-muted-foreground">
@@ -560,7 +574,7 @@ function DataCard() {
                             destructive: true,
                           })
                         ) {
-                          settingsService.deleteRecovery(key);
+                          await settingsService.deleteRecovery(key);
                           refresh();
                         }
                       }}
@@ -635,7 +649,7 @@ export function SettingsPage() {
           >
             <ul className="flex list-disc flex-col gap-2 pl-5 text-sm text-muted-foreground">
               <li>
-                Barcha ma’lumotlar faqat shu brauzerning localStorage xotirasida
+                Barcha ma’lumotlar faqat shu brauzerning IndexedDB xotirasida
                 saqlanadi. Hech qanday serverga yuborilmaydi.
               </li>
               <li>
@@ -644,7 +658,7 @@ export function SettingsPage() {
                 bo‘ladi.
               </li>
               <li>
-                localStorage shifrlanmagan: kompyuterga kirish huquqi bor odam
+                Brauzer xotirasi shifrlanmagan: kompyuterga kirish huquqi bor odam
                 yoki brauzer kengaytmalari uni o‘qishi mumkin. Parol, bank karta
                 rekvizitlari va boshqa juda sezgir ma’lumotlarni kiritmang.
               </li>

@@ -1,11 +1,14 @@
 import { create } from 'zustand'
-import { createLocalStorageAdapter, createMemoryAdapter, StorageError, type StorageAdapter } from './storage/adapter'
+import { notify } from '@/lib/notify'
+import { createMemoryAdapter, StorageError, toStorageError, type StorageAdapter, type StorageChange } from './storage/adapter'
+import { createIdbAdapter } from './storage/idb'
+import { importLegacyLocalStorage, readLegacyLocalStorage } from './storage/legacy'
 import {
-  clearAppStorage,
+  clearChanges,
   defaultMeta,
   loadState,
-  persistPatch,
-  writeMeta,
+  metaChange,
+  patchChanges,
   type LoadIssue,
   type Meta,
 } from './storage/persistence'
@@ -17,50 +20,58 @@ export interface DbStore {
   meta: Meta
   issues: LoadIssue[]
   writeBlocked: boolean
-  /** False when localStorage is unavailable and data lives only in memory for this tab. */
+  /** False when IndexedDB is unavailable and data lives only in memory for this tab. */
   persistent: boolean
+  /** Whether the browser granted persistent storage (`navigator.storage.persist()`); null = unknown. */
+  durable: boolean | null
+  /** Saves still running in the background. */
+  pendingWrites: number
   lastSavedAt: string | null
-  /** Persists the patch first, then updates state. Throws StorageError on failure (state unchanged). */
+  /**
+   * Updates state immediately and saves in the background. If saving fails, state is rolled back
+   * to the last saved version and the user sees a toast. Throws only when writes are blocked.
+   */
   commit: (patch: Partial<DbState>) => void
   updateMeta: (patch: Partial<Meta>) => void
-  /** Replaces all collections atomically (import / reset). */
+  /** Replaces all collections and meta in one atomic save (import / demo / onboarding). */
   replaceAll: (data: DbState, meta?: Partial<Meta>) => void
   resetAll: () => void
   dismissIssue: (index: number) => void
 }
 
-let adapter: StorageAdapter
+type Snapshot = Pick<DbStore, 'data' | 'meta'>
 
-function resolveAdapter(): { adapter: StorageAdapter; persistent: boolean } {
-  try {
-    const ls = createLocalStorageAdapter()
-    const probe = '__personal-os-probe__'
-    ls.setItem(probe, '1')
-    ls.removeItem(probe)
-    return { adapter: ls, persistent: true }
-  } catch {
-    return { adapter: createMemoryAdapter(), persistent: false }
-  }
-}
+let adapter: StorageAdapter = createMemoryAdapter()
+/** Last state known to be saved — the rollback target. */
+let confirmed: Snapshot
+/** Saves run strictly one after another, in the order the changes were made. */
+let queue: Promise<void> = Promise.resolve()
+/** Bumped when the store is (re)loaded; saves queued for an older load are dropped. */
+let epoch = 0
+/** Bumped on a failed save; saves queued after it were built on the rolled-back state and are dropped. */
+let generation = 0
 
-function initialState(a: StorageAdapter, persistent: boolean) {
+const UNAVAILABLE_MESSAGE = 'Brauzer xotirasi mavjud emas: ma’lumotlar faqat shu oynada saqlanadi va yopilganda yo‘qoladi.'
+
+function initialState(a: StorageAdapter, persistent: boolean, extraIssues: LoadIssue[] = []) {
   adapter = a
+  epoch++
   const result = loadState(a)
-  const issues = [...result.issues]
-  if (!persistent) {
-    issues.unshift({
-      collection: 'storage',
-      kind: 'storage',
-      message: 'Brauzer xotirasi mavjud emas: ma’lumotlar faqat shu oynada saqlanadi va yopilganda yo‘qoladi.',
-    })
-  }
+  const issues = [...extraIssues, ...result.issues]
+  if (!persistent && extraIssues.length === 0) issues.unshift({ collection: 'storage', kind: 'storage', message: UNAVAILABLE_MESSAGE })
+  confirmed = { data: result.data, meta: result.meta }
   return {
-    data: result.data,
-    meta: result.meta,
-    issues,
-    writeBlocked: result.writeBlocked,
-    persistent,
-    lastSavedAt: null,
+    state: {
+      data: result.data,
+      meta: result.meta,
+      issues,
+      writeBlocked: result.writeBlocked,
+      persistent,
+      durable: null,
+      pendingWrites: 0,
+      lastSavedAt: null,
+    },
+    writes: result.writes,
   }
 }
 
@@ -71,36 +82,58 @@ function blockedError(): StorageError {
   )
 }
 
-const resolved = resolveAdapter()
+/** Queues a background save of the current state. Changes may be computed when the save runs. */
+function persist(changes: StorageChange[] | ((a: StorageAdapter) => StorageChange[])) {
+  const job = { epoch, generation, adapter }
+  const { data, meta } = useDb.getState()
+  const snapshot: Snapshot = { data, meta }
+  const current = () => job.epoch === epoch
+  useDb.setState((s) => ({ pendingWrites: s.pendingWrites + 1 }))
+  queue = queue.then(async () => {
+    try {
+      if (!current() || job.generation !== generation) return
+      await job.adapter.write(typeof changes === 'function' ? changes(job.adapter) : changes)
+      if (!current()) return
+      confirmed = snapshot
+      useDb.setState({ lastSavedAt: new Date().toISOString() })
+    } catch (error) {
+      if (!current()) return
+      generation++
+      useDb.setState({ data: confirmed.data, meta: confirmed.meta })
+      notify.error('Saqlab bo‘lmadi — so‘nggi o‘zgarishlar bekor qilindi', toStorageError(error).message)
+    } finally {
+      if (current()) useDb.setState((s) => ({ pendingWrites: Math.max(0, s.pendingWrites - 1) }))
+    }
+  })
+}
 
 export const useDb = create<DbStore>()((set, get) => ({
-  ...initialState(resolved.adapter, resolved.persistent),
+  ...initialState(adapter, true).state,
 
   commit: (patch) => {
     if (get().writeBlocked) throw blockedError()
     if (Object.keys(patch).length === 0) return
-    persistPatch(adapter, patch)
-    set((s) => ({ data: { ...s.data, ...patch }, lastSavedAt: new Date().toISOString() }))
+    set((s) => ({ data: { ...s.data, ...patch } }))
+    persist(patchChanges(patch))
   },
 
   updateMeta: (patch) => {
     if (get().writeBlocked) throw blockedError()
     const meta = { ...get().meta, ...patch }
-    writeMeta(adapter, meta)
     set({ meta })
+    persist([metaChange(meta)])
   },
 
   replaceAll: (data, metaPatch = {}) => {
     if (get().writeBlocked) throw blockedError()
-    persistPatch(adapter, data)
     const meta = { ...get().meta, ...metaPatch }
-    writeMeta(adapter, meta)
-    set({ data, meta, lastSavedAt: new Date().toISOString() })
+    set({ data, meta })
+    persist([...patchChanges(data), metaChange(meta)])
   },
 
   resetAll: () => {
-    clearAppStorage(adapter, { keepRecovery: true })
     set({ data: createDefaultState(), meta: defaultMeta(), writeBlocked: false, issues: [], lastSavedAt: null })
+    persist((a) => clearChanges(a, { keepRecovery: true }))
   },
 
   dismissIssue: (index) => set((s) => ({ issues: s.issues.filter((_, i) => i !== index) })),
@@ -114,7 +147,62 @@ export function getStorageAdapter(): StorageAdapter {
   return adapter
 }
 
-/** Test helper: reloads the store from the given adapter. */
-export function reloadDb(a: StorageAdapter, persistent = true): void {
-  useDb.setState(initialState(a, persistent))
+/** Resolves when every queued save has finished (successfully or not). */
+export function flushWrites(): Promise<void> {
+  return queue
+}
+
+/** Loads the store from the given adapter (app start, tests). Load-time writes are queued. */
+export function reloadDb(a: StorageAdapter, persistent = true, issues: LoadIssue[] = []): void {
+  const { state, writes } = initialState(a, persistent, issues)
+  useDb.setState(state)
+  if (writes.length) persist(writes)
+}
+
+/**
+ * Opens IndexedDB, moves data from older localStorage-based versions once, and loads the store.
+ * Never throws: without IndexedDB the app runs on an in-memory copy and shows a banner.
+ */
+export async function initDb(): Promise<void> {
+  let a: StorageAdapter
+  let persistent = true
+  const issues: LoadIssue[] = []
+  try {
+    a = await createIdbAdapter()
+    try {
+      await importLegacyLocalStorage(a)
+    } catch (error) {
+      // The old data stays in localStorage for the next attempt; this tab works on a copy of it.
+      a = createMemoryAdapter(readLegacyLocalStorage())
+      persistent = false
+      issues.push({
+        collection: 'storage',
+        kind: 'storage',
+        message: `Ma’lumotlarni yangi xotiraga (IndexedDB) ko‘chirib bo‘lmadi: ${toStorageError(error).message} Eski ma’lumotlar joyida qoldi; bu oynadagi o‘zgarishlar saqlanmaydi.`,
+      })
+    }
+  } catch {
+    a = createMemoryAdapter(readLegacyLocalStorage())
+    persistent = false
+  }
+  reloadDb(a, persistent, issues)
+  await flushWrites()
+  if (!persistent) return
+  window.addEventListener('beforeunload', (event) => {
+    // Asks "Leave site?" only while a save is still running.
+    if (useDb.getState().pendingWrites > 0) event.preventDefault()
+  })
+  void requestDurableStorage()
+}
+
+/** Asks the browser not to evict our data under storage pressure. Not awaited: Firefox may prompt. */
+async function requestDurableStorage() {
+  const storage = globalThis.navigator?.storage
+  if (!storage?.persist) return
+  try {
+    const durable = (await storage.persisted()) || (await storage.persist())
+    useDb.setState({ durable })
+  } catch {
+    // Unsupported: stays unknown.
+  }
 }

@@ -9,9 +9,10 @@
     <title>Personal OS</title>
     <script>
       // Applies the saved theme before first paint so dark mode never flashes light.
-      // Keep in sync with src/hooks/useTheme.ts (a missing profile means the "system" default).
+      // Data is in IndexedDB (async), so useTheme.ts mirrors the choice into this localStorage key.
+      // Keep in sync with src/hooks/useTheme.ts (a missing key means the "system" default).
       try {
-        var theme = JSON.parse(localStorage.getItem('personal-os:profile') || '{}').theme
+        var theme = localStorage.getItem('personal-os:theme')
         if (theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
           document.documentElement.classList.add('dark')
         }

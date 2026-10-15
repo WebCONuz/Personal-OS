@@ -33,6 +33,7 @@ import {
 export const STORAGE_PREFIX = 'personal-os:'
 export const META_KEY = `${STORAGE_PREFIX}meta`
 export const RECOVERY_PREFIX = `${STORAGE_PREFIX}recovery:`
+export const PRE_MIGRATION_PREFIX = `${STORAGE_PREFIX}pre-migration-`
 
 /** Collections that hold arrays of entities. */
 export const arrayCollections = {
@@ -99,6 +100,16 @@ export function storageKeyOf(name: CollectionName): string {
     return STORAGE_PREFIX + singletonCollections[name].key
   }
   return STORAGE_PREFIX + arrayCollections[name].key
+}
+
+const COLLECTION_KEYS = new Set(COLLECTION_NAMES.map(storageKeyOf))
+
+/**
+ * Keys holding user data (collections, meta, recovery copies). Other `personal-os:*` keys —
+ * per-device UI prefs and the theme hint — stay in localStorage and are never part of the database.
+ */
+export function isDataKey(key: string): boolean {
+  return key === META_KEY || COLLECTION_KEYS.has(key) || key.startsWith(RECOVERY_PREFIX) || key.startsWith(PRE_MIGRATION_PREFIX)
 }
 
 export function schemaOf(name: CollectionName): z.ZodType {

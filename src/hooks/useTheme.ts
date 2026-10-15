@@ -4,6 +4,11 @@ import { useProfile } from './useData'
 export type ResolvedTheme = 'light' | 'dark'
 
 const DARK_QUERY = '(prefers-color-scheme: dark)'
+/**
+ * Copy of `profile.theme` in localStorage. Data lives in IndexedDB, which cannot be read
+ * synchronously, so the inline script in index.html reads this key before first paint.
+ */
+export const THEME_HINT_KEY = 'personal-os:theme'
 // Mirrors --background / --sidebar of each theme so the browser chrome (mobile address bar) matches.
 const THEME_COLOR: Record<ResolvedTheme, string> = { light: '#fbfbfc', dark: '#17212b' }
 
@@ -30,7 +35,15 @@ export function useResolvedTheme(): ResolvedTheme {
  * index.html does the same before first paint so a dark theme never flashes light.
  */
 export function useThemeSync() {
+  const theme = useProfile().theme
   const resolved = useResolvedTheme()
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_HINT_KEY, theme)
+    } catch {
+      // Only costs a light flash on the next load.
+    }
+  }, [theme])
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolved === 'dark')
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[resolved])

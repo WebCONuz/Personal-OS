@@ -3,7 +3,7 @@
 Shaxsiy rivojlanish platformasi: **maqsad → haftalik reja → kundalik harakat → natija → tahlil → keyingi reja**.
 
 Maqsadlar, haftalik rejalashtirish, vazifalar, vaqt kuzatuvi, karyera, biznes loyihalari, ta’lim, moliya, odatlar
-va statistika bitta ilovada jamlangan. Backend yo‘q: barcha ma’lumotlar brauzerning `localStorage` xotirasida
+va statistika bitta ilovada jamlangan. Backend yo‘q: barcha ma’lumotlar brauzerning **IndexedDB** xotirasida
 saqlanadi va JSON eksport/import orqali zaxiralanadi.
 
 ## Mundarija
@@ -55,6 +55,7 @@ ma’lumotlarini saqlaydi.
 | UI | React 19, Tailwind CSS 4, shadcn/ui (Radix, `radix-nova` uslubi), lucide-react, Geist shrifti |
 | Routing | React Router 8 (`createBrowserRouter`, har bir bo‘lim lazy chunk) |
 | State | Zustand 5 |
+| Saqlash | IndexedDB (`idb` — Promise o‘rami), test uchun `fake-indexeddb` |
 | Formalar | React Hook Form + Zod 4 |
 | Grafiklar | Recharts 3 |
 | Sana | date-fns 4 |
@@ -92,7 +93,9 @@ WCAG AA kontrastiga (4.5:1) yetmaydi.
 - `src/hooks/useTheme.ts`: `useResolvedTheme()` haqiqiy mavzuni qaytaradi (`system` OS sozlamasini jonli kuzatadi),
   `useThemeSync()` (App’da bir marta) `<html>`ga `.dark` klassini va `theme-color` meta’ni qo‘yadi.
 - `index.html`dagi kichik inline skript mavzuni birinchi chizishdan oldin qo‘llaydi — qorong‘i mavzu oq bo‘lib
-  miltillamaydi. `useTheme.ts`ni o‘zgartirsangiz, uni ham moslang.
+  miltillamaydi. IndexedDB sinxron o‘qilmagani uchun `useThemeSync()` tanlovni localStorage’dagi
+  `personal-os:theme` kalitiga ham yozadi, skript shuni o‘qiydi. `useTheme.ts`ni o‘zgartirsangiz, skriptni ham
+  moslang.
 - Komponentlarda qattiq ranglar ishlatilmaydi — faqat `src/index.css`dagi tokenlar (`bg-card`,
   `text-muted-foreground`, …); yangi rang kerak bo‘lsa, `:root` va `.dark`ga birga qo‘shing.
 
@@ -125,13 +128,14 @@ src/
                         # date, money, progress, gamification, analytics, backup
   data/
     schema/             # Zod entity sxemalari + DbState (yagona manba)
-    storage/            # StorageAdapter (localStorage / memory), yuklash, atomik yozish, recovery
+    storage/            # StorageAdapter (IndexedDB / memory), yuklash, recovery,
+                        # localStorage’dan bir martalik ko‘chirish (legacy.ts)
     repositories/       # umumiy CRUD repository (har bir to‘plam uchun `repos.<nom>`)
     migrations/         # schemaVersion va migratsiya funksiyalari
     seed/               # standart hayot sohalari va demo ma’lumotlar
     relations.ts        # cascade / unlink qoidalari (o‘chirish va import uchun)
     mutate.ts           # sof “recipe” → atomik commit + toast
-    store.ts            # Zustand store: avval saqlaydi, keyin UI holatini yangilaydi
+    store.ts            # Zustand store: UI darhol yangilanadi, saqlash orqada (navbat + rollback)
   constants/labels.ts   # enum label’lari (kelajakdagi i18n uchun bitta joy)
   hooks/                # umumiy hook’lar (useCollection, useToday, useTheme, …)
   lib/                  # cn, id, notify, createEditorStore, uiPrefs
@@ -145,47 +149,80 @@ Features: `analytics`, `business`, `career`, `dashboard`, `finance`, `gamificati
 
 ### Asosiy qoidalar
 
-- Komponentlar `localStorage`ga to‘g‘ridan-to‘g‘ri murojaat qilmaydi.
+- Komponentlar IndexedDB yoki `localStorage`ga to‘g‘ridan-to‘g‘ri murojaat qilmaydi (istisno: `lib/uiPrefs.ts`
+  va mavzu kaliti — ular ma’lumot emas, qurilma sozlamasi).
 - Statistika (progress, foizlar, XP yig‘indisi, daraja, streak, budjet holati, insight’lar) **saqlanmaydi** —
   har safar asosiy yozuvlardan hisoblanadi.
-- Bir nechta to‘plamni o‘zgartiradigan amallar atomik: biror kalitni yozish muvaffaqiyatsiz bo‘lsa, yozilganlari
-  orqaga qaytariladi va UI holati o‘zgarmaydi.
+- Bir nechta to‘plamni o‘zgartiradigan amallar atomik: barcha kalitlar bitta IndexedDB tranzaksiyasida yoziladi
+  (hammasi yoki hech biri). Saqlash muvaffaqiyatsiz bo‘lsa, UI oxirgi saqlangan holatga qaytariladi.
 - XP miqdorlari va boshqa “sehrli sonlar” komponentlarda emas, `services/` konfiguratsiyasida turadi.
 - Barcha forma dialoglari `EditorHosts` ichida bir marta mount qilinadi va `editor.ts` store’lari orqali
   istalgan joydan (sahifa, qidiruv, tezkor qo‘shish) ochiladi.
 
 ## Ma’lumotlar qatlami
 
-### Yozish oqimi
+### Ishga tushish
+
+`main.tsx` render’dan oldin `initDb()`ni kutadi (odatda bir necha ms):
+
+1. IndexedDB bazasi (`personal-os`, bitta `kv` object store) ochiladi va **hamma yozuvlar bir marta xotiraga
+   o‘qiladi**. Shundan keyin barcha o‘qishlar sinxron — komponent, servis va hook’lar hech narsani `await`
+   qilmaydi.
+2. Baza bo‘sh bo‘lsa va localStorage’da eski versiya ma’lumotlari bo‘lsa, ular **bir marta** ko‘chiriladi
+   (`storage/legacy.ts`): ma’lumot kalitlari + to‘liq asl nusxa `personal-os:recovery:localStorage:*` sifatida
+   bitta tranzaksiyada yoziladi, faqat shundan keyin localStorage tozalanadi. Ko‘chirish muvaffaqiyatsiz bo‘lsa,
+   eski ma’lumot joyida qoladi (keyingi ochilishda qayta urinadi), shu oyna esa uning nusxasi bilan ishlaydi.
+3. `navigator.storage.persist()` so‘raladi (kutilmaydi) — natija Sozlamalar → “Brauzer xotirasi”da ko‘rinadi.
+4. IndexedDB umuman mavjud bo‘lmasa, ilova xotiradagi adapterga o‘tadi va banner ko‘rsatadi.
+
+### Yozish oqimi (optimistik)
 
 ```text
 Komponent ──► features/<x>/service.ts ──► repos.<nom> / mutate(recipe)
                                               │
                                               ▼
                                store.commit(patch)  (Zustand)
-                                              │  1) persistPatch → StorageAdapter (atomik, rollback)
-                                              │  2) muvaffaqiyatli bo‘lsa → set(state)
+                                              │  1) set(state) — UI darhol yangilanadi
+                                              │  2) persist(...) — saqlash navbatiga qo‘shiladi
                                               ▼
-                                  localStorage  `personal-os:*`
+                         navbat (ketma-ket) ──► adapter.write(changes)
+                                              │  bitta IndexedDB tranzaksiyasi: hammasi yoki hech biri
+                                              ▼
+                              IndexedDB `personal-os` → `kv` (`personal-os:*` kalitlari)
 ```
 
-- `mutate(recipe)` joriy holatni oladi, sof funksiya qaytargan `Partial<DbState>` patch’ni commit qiladi.
-  Xato bo‘lsa toast ko‘rsatiladi va `false` qaytadi — xatolar hech qachon jim yutilmaydi.
+- Saqlashlar o‘zgarishlar qilingan tartibda, **birma-bir** bajariladi. Muvaffaqiyatli saqlashdan keyin holat
+  “tasdiqlangan” deb belgilanadi.
+- Saqlash xato bersa: holat oxirgi tasdiqlangan holatga qaytariladi, “Saqlab bo‘lmadi — so‘nggi o‘zgarishlar
+  bekor qilindi” toast’i chiqadi, navbatda undan keyin turgan saqlashlar ham bekor qilinadi (ular rad etilgan
+  holat ustiga qurilgan edi).
+- `pendingWrites > 0` bo‘lsa TopBar’da “Saqlanmoqda…” ko‘rinadi va tab yopilayotganda brauzer “Sahifadan
+  chiqasizmi?” deb so‘raydi.
+- `flushWrites()` navbatdagi barcha saqlashlar tugashini kutadi (testlarda va Sozlamalardagi xotira
+  ma’lumotini yangilashda ishlatiladi).
+- `mutate(recipe)` joriy holatni oladi, sof funksiya qaytargan `Partial<DbState>` patch’ni commit qiladi va
+  o‘zgarish qo‘llangan bo‘lsa `true` qaytaradi. Recipe xatosi yoki bloklangan yozish bo‘lsa toast ko‘rsatiladi va
+  `false` qaytadi — xatolar hech qachon jim yutilmaydi.
 - `createRepository(name)` har bir to‘plam uchun `getAll`, `getById`, `create`, `update`, `remove` hamda bir nechta
   to‘plamni birga o‘zgartirish uchun sof `withCreated` / `withUpdated` helperlarini beradi. `id`, `createdAt`,
   `updatedAt` avtomatik qo‘yiladi.
 - O‘chirish `relations.ts`dagi qoidalar bo‘yicha ishlaydi: `cascade` — bog‘liq yozuvlar ham o‘chadi (masalan, odat
   loglari, maqsad bosqichlari), `unlink` — havola tozalanadi, yozuv qoladi (masalan, o‘chirilgan maqsadning
   vazifalari).
-- `localStorage` mavjud bo‘lmasa (maxfiy rejim, bloklangan), ilova xotiradagi adapterga o‘tadi va foydalanuvchiga
-  ogohlantirish chiqaradi.
-
 ### Saqlash formati
 
+- IndexedDB bazasi `personal-os`, bitta `kv` object store: kalit → JSON matn. Kalitlar avvalgi localStorage
+  kalitlari bilan bir xil, shuning uchun yuklash, validatsiya, recovery va migratsiyalar o‘zgarmagan.
 - 26 ta massiv to‘plam (`goals`, `tasks`, `habits`, `transactions`, …) va 2 ta yagona qiymat (`profile`, `timer`).
   Har biri alohida kalitda: `personal-os:goals`, `personal-os:tasks`, …; ro‘yxat — `src/data/schema/db.ts`.
 - `personal-os:meta` — `schemaVersion` va boshqa meta ma’lumotlar.
+- localStorage’da faqat qurilma sozlamalari qoladi: `personal-os:ui` (sidebar) va `personal-os:theme` (mavzu
+  skripti uchun). Ular ma’lumot emas — `isDataKey()` ularni bazaga kiritmaydi.
 - Sana-only qiymatlar `YYYY-MM-DD`, vaqt belgilari ISO formatda saqlanadi.
+
+`StorageAdapter` shartnomasi (`src/data/storage/adapter.ts`): `getItem` / `keys` — xotiradagi nusxadan sinxron,
+`write(changes)` — atomik partiya, nusxa faqat tranzaksiya tasdiqlangach yangilanadi. Testlar
+`createMemoryAdapter()`dan, IndexedDB testlari `fake-indexeddb`dan foydalanadi.
 
 ### Ma’lumotlar xavfsizligi
 
@@ -194,6 +231,8 @@ Komponent ──► features/<x>/service.ts ──► repos.<nom> / mutate(recip
 - Yangiroq sxema versiyasidagi ma’lumotlar topilsa yozish bloklanadi (ma’lumot ustidan yozilmaydi).
 - Import: JSON parse → ilova/versiya tekshiruvi → migratsiya → Zod validatsiya → takroriy ID → osilgan
   bog‘lanishlarni tuzatish → preview → tasdiq. Xato bo‘lsa mavjud ma’lumotlar o‘zgarmaydi.
+- Yuklash o‘zi hech narsa yozmaydi: recovery nusxalar va migratsiya natijasi `LoadResult.writes`da qaytadi va
+  store ularni bitta partiyada saqlaydi.
 - Reset recovery nusxalarini saqlab qoladi.
 
 ## Domen qoidalari
@@ -255,7 +294,8 @@ Saqlangan ma’lumot shaklini buzadigan har bir o‘zgarishda:
 2. `migrations` obyektiga yangi versiya kaliti bilan funksiya qo‘shing — u validatsiyadan oldingi “xom” ma’lumotni
    oldingi versiyadan yangisiga o‘tkazadi.
 
-Migratsiyalar `localStorage`dan yuklashda ham, eski zaxira nusxani import qilishda ham ishlaydi. Yangi
+Bu ma’lumot sxemasi versiyasi; IndexedDB bazasining o‘z versiyasi (`IDB_VERSION`, `storage/idb.ts`) faqat object
+store tuzilishi o‘zgarganda oshiriladi. Migratsiyalar IndexedDB’dan yuklashda ham, eski zaxira nusxani import qilishda ham ishlaydi. Yangi
 **ixtiyoriy** maydon `.default()` bilan qo‘shilsa, odatda migratsiya shart emas.
 
 ### shadcn/ui komponentlari
@@ -266,11 +306,14 @@ va kerak bo‘lsa `npm uninstall cn` qiling.
 
 ## Testlar va sifat
 
-`npm run test` — 17 ta fayl, 91 ta test. Muhit: jsdom, setup — `src/test/setup.ts`.
+`npm run test` — 18 ta fayl, 96 ta test. Muhit: jsdom, setup — `src/test/setup.ts`.
 
 - **Domen:** sana/hafta hisoblari, valyuta formati va ajratish, progress, daraja va XP qoidalari, streak’lar va
-  streak tarixi, cascade/unlink, atomik yozish va rollback, buzilgan JSON, migratsiya bloki, demo ma’lumotlar
-  validatsiyasi va tozalanishi, eksport/import, vazifa/odat/taymer/jamg‘arma/haftalik reja servislari.
+  streak tarixi, cascade/unlink, buzilgan JSON, migratsiya bloki, demo ma’lumotlar validatsiyasi va tozalanishi,
+  eksport/import, vazifa/odat/taymer/jamg‘arma/haftalik reja servislari.
+- **Saqlash:** optimistik yozish va xatoda rollback, xatodan keyingi navbatdagi saqlashlarni bekor qilish,
+  bitta partiyada yozish; IndexedDB adapteri (`fake-indexeddb`: qayta ochilganda saqlanish, tranzaksiya
+  atomikligi), localStorage’dan ko‘chirish va `initDb()` to‘liq oqimi.
 - **Komponentlar** (Testing Library + `axe-core`): Vazifalar, Maqsadlar (forma validatsiyasi, bosqichlarni
   tahrirlash), Haftalik reja (holatlar, ortiqcha reja), Odatlar, Sozlamalar (import, mavzu tanlash), global
   qidiruv, demo banneri.
@@ -299,11 +342,14 @@ Layout 360px, 375px, ~800px va 1440px kengliklarda tekshirilgan, gorizontal scro
 - **Ko‘p tillilik** — enum label’lari `src/constants/labels.ts`da markazlashgan, komponent matnlari hali ichida.
 - Takrorlanuvchi vazifalar.
 - Drag-and-drop (hozir kun/holat select orqali tanlanadi).
-- IndexedDB adapteri (`StorageAdapter` interfeysi tayyor).
 - Bilimlar bazasida backlink grafi, murakkabroq editor.
 
 ### Ma’lum cheklovlar
 
 - Ma’lumotlar faqat joriy brauzer profilida; qurilmalar o‘rtasida sinxronlash yo‘q. Muntazam JSON eksport qiling.
-- `localStorage` hajmi odatda ~5 MB; juda katta tarixda IndexedDB’ga o‘tish kerak bo‘ladi.
-- `localStorage` shifrlanmagan — parol yoki bank rekvizitlarini kiritmang.
+- Brauzer ma’lumotlarni “best-effort” saqlaydi: `persist()` ruxsati bo‘lmasa, disk juda to‘lganda (yoki Safari’da
+  sayt 7 kun ochilmasa) o‘chirilishi mumkin. “Clear browsing data” ham hammasini o‘chiradi.
+- Bir nechta tab bir vaqtda ochilsa, ular o‘zaro sinxronlanmaydi — oxirgi saqlagan tab yutadi.
+- Butun ma’lumot ishga tushishda xotiraga o‘qiladi; bu shaxsiy hajmlar uchun yetarli, juda katta (yuzlab MB)
+  tarix uchun to‘plamlarni alohida object store’larga bo‘lish kerak bo‘ladi.
+- Brauzer xotirasi shifrlanmagan — parol yoki bank rekvizitlarini kiritmang.

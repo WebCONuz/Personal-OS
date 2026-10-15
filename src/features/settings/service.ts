@@ -5,7 +5,7 @@ import { repos } from '@/data/repositories'
 import { countDemoRecords, withDemoData, withoutDemoData } from '@/data/seed/demo'
 import { StorageError, toStorageError } from '@/data/storage/adapter'
 import { estimateUsageBytes, listRecoveryKeys } from '@/data/storage/persistence'
-import { getDb, getStorageAdapter, useDb } from '@/data/store'
+import { flushWrites, getDb, getStorageAdapter, useDb } from '@/data/store'
 import { applyImport, backupFileName, createBackup, downloadBlob, downloadJson, parseBackup, type ImportPreview, type ImportStrategy } from '@/services/backup'
 import { todayKey } from '@/services/date'
 import type { Profile, Theme } from '@/types'
@@ -116,15 +116,21 @@ export const settingsService = {
     return { usageBytes: estimateUsageBytes(adapter), recoveryKeys: listRecoveryKeys(adapter) }
   },
 
+  /** Same as storageInfo, after background saves have finished (the stored snapshot is then current). */
+  async refreshStorageInfo() {
+    await flushWrites()
+    return settingsService.storageInfo()
+  },
+
   downloadRecovery(key: string) {
     const raw = getStorageAdapter().getItem(key)
     if (raw === null) return notify.error('Zaxira topilmadi')
     downloadBlob(`${key.replace(/[^a-z0-9-]+/gi, '_')}.json`, new Blob([raw], { type: 'application/json' }))
   },
 
-  deleteRecovery(key: string) {
+  async deleteRecovery(key: string) {
     try {
-      getStorageAdapter().removeItem(key)
+      await getStorageAdapter().write([{ key, value: null }])
       notify.success('Zaxira nusxa o‘chirildi')
     } catch (error) {
       storageErrorToast('O‘chirib bo‘lmadi', error)

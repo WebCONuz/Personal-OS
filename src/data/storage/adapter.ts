@@ -10,15 +10,21 @@ export class StorageError extends Error {
   }
 }
 
+/** One key to write; `value: null` removes the key. */
+export interface StorageChange {
+  key: string
+  value: string | null
+}
+
 /**
- * Minimal synchronous key-value storage contract. localStorage implements it today;
- * an IndexedDB-backed adapter (with an in-memory cache) could implement it later.
+ * Key-value storage contract. Reads are synchronous from a snapshot loaded at startup, so the
+ * store and services never await a read. Writes are applied as one atomic batch (all or nothing);
+ * the snapshot changes only after the batch is committed.
  */
 export interface StorageAdapter {
   getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
   keys(): string[]
+  write(changes: StorageChange[]): Promise<void>
 }
 
 function isQuotaError(error: unknown): boolean {
@@ -43,64 +49,23 @@ export function toStorageError(error: unknown): StorageError {
   return new StorageError('unknown', 'Ma’lumotni saqlashda kutilmagan xatolik yuz berdi.', { cause: error })
 }
 
-export function createLocalStorageAdapter(storage: Storage | undefined = globalThis.localStorage): StorageAdapter {
-  const get = (): Storage => {
-    if (!storage) {
-      throw new StorageError(
-        'unavailable',
-        'Brauzer xotirasi (localStorage) mavjud emas. Maxfiy rejim yoki brauzer sozlamalarini tekshiring.',
-      )
-    }
-    return storage
-  }
-  return {
-    getItem(key) {
-      try {
-        return get().getItem(key)
-      } catch (error) {
-        throw toStorageError(error)
-      }
-    },
-    setItem(key, value) {
-      try {
-        get().setItem(key, value)
-      } catch (error) {
-        throw toStorageError(error)
-      }
-    },
-    removeItem(key) {
-      try {
-        get().removeItem(key)
-      } catch (error) {
-        throw toStorageError(error)
-      }
-    },
-    keys() {
-      const s = get()
-      const result: string[] = []
-      for (let i = 0; i < s.length; i++) {
-        const k = s.key(i)
-        if (k !== null) result.push(k)
-      }
-      return result
-    },
+/** Applies changes to an in-memory snapshot (shared by the memory and IndexedDB adapters). */
+export function applyChanges(map: Map<string, string>, changes: StorageChange[]): void {
+  for (const { key, value } of changes) {
+    if (value === null) map.delete(key)
+    else map.set(key, value)
   }
 }
 
-/** In-memory adapter used in tests and as a fallback when localStorage is unavailable. */
+/** In-memory adapter used in tests and as a fallback when IndexedDB is unavailable. */
 export function createMemoryAdapter(initial: Record<string, string> = {}): StorageAdapter & {
   dump(): Record<string, string>
 } {
   const map = new Map(Object.entries(initial))
   return {
     getItem: (key) => map.get(key) ?? null,
-    setItem: (key, value) => {
-      map.set(key, value)
-    },
-    removeItem: (key) => {
-      map.delete(key)
-    },
     keys: () => [...map.keys()],
+    write: async (changes) => applyChanges(map, changes),
     dump: () => Object.fromEntries(map),
   }
 }

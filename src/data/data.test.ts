@@ -3,7 +3,7 @@ import { emptyState, goal, habit, milestone, task } from '@/test/factories'
 import { removeEntities, sanitizeReferences } from './relations'
 import { dbStateSchema, storageKeyOf } from './schema/db'
 import { createDemoData, withDemoData, withoutDemoData, countDemoRecords } from './seed/demo'
-import { createMemoryAdapter, StorageError, type StorageAdapter } from './storage/adapter'
+import { createMemoryAdapter, StorageError, toStorageError, type StorageAdapter, type StorageChange } from './storage/adapter'
 import { loadState, persistPatch, writeMeta } from './storage/persistence'
 
 describe('relations', () => {
@@ -69,53 +69,34 @@ describe('relations', () => {
 })
 
 describe('persistence', () => {
-  it('rolls back already-written keys when a multi-collection write fails', () => {
-    const memory = createMemoryAdapter({ [storageKeyOf('goals')]: '[]', [storageKeyOf('tasks')]: '[]' })
-    let writes = 0
-    const flaky: StorageAdapter = {
-      ...memory,
-      setItem(key, value) {
-        writes++
-        if (writes === 2) throw new DOMException('full', 'QuotaExceededError')
-        memory.setItem(key, value)
-      },
-    }
-    const state = emptyState()
-    expect(() => persistPatch(flaky, { goals: [goal()], tasks: [task()] })).toThrow(StorageError)
-    expect(memory.getItem(storageKeyOf('goals'))).toBe('[]')
-    expect(memory.getItem(storageKeyOf('tasks'))).toBe('[]')
-    expect(state.goals).toEqual([])
+  it('saves every collection of a patch in a single batch', async () => {
+    const memory = createMemoryAdapter()
+    const batches: StorageChange[][] = []
+    const adapter: StorageAdapter = { ...memory, write: (changes) => (batches.push(changes), memory.write(changes)) }
+    await persistPatch(adapter, { goals: [goal()], tasks: [task()] })
+    expect(batches).toHaveLength(1)
+    expect(batches[0].map((c) => c.key)).toEqual([storageKeyOf('goals'), storageKeyOf('tasks')])
   })
 
   it('reports quota errors in plain language', () => {
-    const adapter: StorageAdapter = {
-      ...createMemoryAdapter(),
-      setItem() {
-        throw new DOMException('full', 'QuotaExceededError')
-      },
-    }
-    try {
-      persistPatch(adapter, { goals: [] })
-      expect.unreachable()
-    } catch (error) {
-      expect(error).toBeInstanceOf(StorageError)
-      expect((error as StorageError).kind).toBe('quota')
-    }
+    const error = toStorageError(new DOMException('full', 'QuotaExceededError'))
+    expect(error).toBeInstanceOf(StorageError)
+    expect(error.kind).toBe('quota')
   })
 
-  it('keeps a recovery copy of corrupt JSON and loads the rest', () => {
+  it('keeps a recovery copy of corrupt JSON and loads the rest', async () => {
     const adapter = createMemoryAdapter({
       [storageKeyOf('tasks')]: '{"broken',
       [storageKeyOf('goals')]: JSON.stringify([goal({ id: 'ok' })]),
     })
-    writeMeta(adapter, { schemaVersion: 1, onboarded: true, demoLoaded: false })
+    await writeMeta(adapter, { schemaVersion: 1, onboarded: true, demoLoaded: false })
     const result = loadState(adapter)
     expect(result.data.goals.map((g) => g.id)).toEqual(['ok'])
     expect(result.data.tasks).toEqual([])
     expect(result.issues).toHaveLength(1)
     const key = result.issues[0].recoveryKey!
-    expect(adapter.getItem(key)).toBe('{"broken')
-    // The corrupt original is not overwritten during load.
+    // The copy is saved by the store after loading; loading itself never writes.
+    expect(result.writes).toEqual([{ key, value: '{"broken' }])
     expect(adapter.getItem(storageKeyOf('tasks'))).toBe('{"broken')
   })
 
@@ -128,9 +109,9 @@ describe('persistence', () => {
     expect(result.issues[0].kind).toBe('validation')
   })
 
-  it('blocks writes for data from a newer schema version', () => {
+  it('blocks writes for data from a newer schema version', async () => {
     const adapter = createMemoryAdapter()
-    writeMeta(adapter, { schemaVersion: 99, onboarded: true, demoLoaded: false })
+    await writeMeta(adapter, { schemaVersion: 99, onboarded: true, demoLoaded: false })
     const result = loadState(adapter)
     expect(result.writeBlocked).toBe(true)
     expect(result.issues[0].kind).toBe('migration')

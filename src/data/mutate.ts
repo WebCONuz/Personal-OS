@@ -9,9 +9,10 @@ export interface MutateOptions {
 }
 
 /**
- * Runs a pure recipe against the current state and commits the returned patch atomically.
- * Storage errors are never swallowed: the user sees a toast and the UI state stays unchanged.
- * Returns true when the change was saved.
+ * Runs a pure recipe against the current state and commits the returned patch.
+ * The UI updates at once and the patch is saved atomically in the background; if that save
+ * fails, the store rolls back and shows a toast — errors are never swallowed.
+ * Returns true when the change was applied (false for recipe errors or blocked writes).
  */
 export function mutate(recipe: (state: DbState) => Partial<DbState> | null | undefined, opts: MutateOptions = {}): boolean {
   const store = useDb.getState()
